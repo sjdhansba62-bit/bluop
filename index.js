@@ -38,16 +38,41 @@ function proxyRequest(targetUrl, req, res) {
     return res.status(500).send('Failed to initialize proxy agent.');
   }
 
+  // Tentukan body yang akan dikirim
+  let bodyData = null;
+  let contentType = null;
+
+  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+    if (req.body && Object.keys(req.body).length > 0) {
+      const ct = req.headers['content-type'] || '';
+      if (ct.includes('application/json')) {
+        bodyData = JSON.stringify(req.body);
+        contentType = 'application/json';
+      } else {
+        // default: form encoded
+        bodyData = new URLSearchParams(req.body).toString();
+        contentType = 'application/x-www-form-urlencoded';
+      }
+    }
+  }
+
+  const headers = {
+    'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
+    'Accept': req.headers['accept'] || '*/*',
+    'Accept-Language': req.headers['accept-language'] || 'en-US,en;q=0.9',
+    'Referer': GROWTOPIA_BASE,
+    'Origin': GROWTOPIA_BASE,
+  };
+
+  if (contentType) {
+    headers['Content-Type'] = contentType;
+    headers['Content-Length'] = Buffer.byteLength(bodyData);
+  }
+
   const options = {
     agent,
     method: req.method,
-    headers: {
-      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0',
-      'Accept': req.headers['accept'] || '*/*',
-      'Accept-Language': req.headers['accept-language'] || 'en-US,en;q=0.9',
-      'Referer': GROWTOPIA_BASE,
-      'Origin': GROWTOPIA_BASE,
-    },
+    headers,
   };
 
   try {
@@ -81,9 +106,8 @@ function proxyRequest(targetUrl, req, res) {
       proxyReq.destroy(new Error('Proxy request timeout'));
     });
 
-    if (req.method === 'POST' && req.body) {
-      const body = new URLSearchParams(req.body).toString();
-      proxyReq.write(body);
+    if (bodyData) {
+      proxyReq.write(bodyData);
     }
 
     proxyReq.end();
@@ -99,15 +123,10 @@ function proxyRequest(targetUrl, req, res) {
 // Routes
 // ─────────────────────────────────────────────
 
-app.post('/player/growid/checktoken', (_req, res) => {
-  res.json({
-    status: 'redirect',
-    message: 'Token is invalid.',
-    token: '',
-    url: '',
-    accountType: 'growtopia',
-    accountAge: 2,
-  });
+app.post('/player/growid/checktoken', (req, res) => {
+  const targetUrl = `${GROWTOPIA_BASE}/player/growid/checktoken`;
+  console.log(`[SOCKS5] checktoken → ${targetUrl}`);
+  proxyRequest(targetUrl, req, res);
 });
 
 app.get('/', (_req, res) => {

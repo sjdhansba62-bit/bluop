@@ -124,9 +124,21 @@ function proxyRequest(targetUrl, req, res) {
 // ─────────────────────────────────────────────
 
 app.post('/player/growid/checktoken', (req, res) => {
-  const targetUrl = `${GROWTOPIA_BASE}/player/growid/checktoken`;
-  console.log(`[SOCKS5] checktoken → ${targetUrl}`);
-  proxyRequest(targetUrl, req, res);
+  // Game mengirim token ke sini untuk validasi.
+  // Kita balas redirect ke login page kita sendiri.
+  const token = req.body?.token || '';
+  const host = req.headers['x-forwarded-host'] || req.headers['host'] || 'localhost:5000';
+  const protocol = req.headers['x-forwarded-proto'] || 'https';
+  const loginUrl = `${protocol}://${host}/player/login/dashboard`;
+
+  res.json({
+    status: 'redirect',
+    message: 'Login page',
+    token: token,
+    url: loginUrl,
+    accountType: 'growtopia',
+    accountAge: 2,
+  });
 });
 
 app.get('/', (_req, res) => {

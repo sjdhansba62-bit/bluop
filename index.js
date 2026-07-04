@@ -143,7 +143,7 @@ app.all('/proxy/growid/frame', (req, res) => {
   proxyRequest(targetUrl, req, res);
 });
 
-app.all('/proxy/gt/:path(*)', (req, res) => {
+app.all('/proxy/gt/*path', (req, res) => {
   const subPath = req.params.path;
   const query = Object.keys(req.query).length
     ? '?' + new URLSearchParams(req.query).toString()

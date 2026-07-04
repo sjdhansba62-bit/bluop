@@ -19,14 +19,24 @@ const SOCKS5_PROXY = process.env.SOCKS5_PROXY || 'socks5://1:1@38.255.51.201:108
 const GROWTOPIA_BASE = 'https://login.growtopiagame.com';
 
 function getAgent() {
-  return SOCKS5_PROXY ? new SocksProxyAgent(SOCKS5_PROXY) : undefined;
+  try {
+    return new SocksProxyAgent(SOCKS5_PROXY);
+  } catch (e) {
+    console.error('[SOCKS5] Failed to create agent:', e.message);
+    return undefined;
+  }
 }
 
 // ─────────────────────────────────────────────
 // Reverse Proxy Helper
 // ─────────────────────────────────────────────
 function proxyRequest(targetUrl, req, res) {
-  const agent = getAgent();
+  let agent;
+  try {
+    agent = getAgent();
+  } catch (e) {
+    return res.status(500).send('Failed to initialize proxy agent.');
+  }
 
   const options = {
     agent,
@@ -40,40 +50,49 @@ function proxyRequest(targetUrl, req, res) {
     },
   };
 
-  const proxyReq = https.request(targetUrl, options, (proxyRes) => {
-    const forwardHeaders = {};
-    const allowedHeaders = [
-      'content-type', 'cache-control', 'set-cookie',
-      'content-encoding', 'transfer-encoding',
-    ];
-    for (const h of allowedHeaders) {
-      if (proxyRes.headers[h]) forwardHeaders[h] = proxyRes.headers[h];
+  try {
+    const proxyReq = https.request(targetUrl, options, (proxyRes) => {
+      const forwardHeaders = {};
+      const allowedHeaders = [
+        'content-type', 'cache-control', 'set-cookie',
+        'content-encoding', 'transfer-encoding',
+      ];
+      for (const h of allowedHeaders) {
+        if (proxyRes.headers[h]) forwardHeaders[h] = proxyRes.headers[h];
+      }
+
+      if ([301, 302, 303, 307, 308].includes(proxyRes.statusCode)) {
+        const location = proxyRes.headers['location'] || '/';
+        return res.redirect(proxyRes.statusCode, location);
+      }
+
+      res.writeHead(proxyRes.statusCode, forwardHeaders);
+      proxyRes.pipe(res);
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error('[ProxyError]', err.message);
+      if (!res.headersSent) {
+        res.status(502).send(`Proxy error: ${err.message}`);
+      }
+    });
+
+    proxyReq.setTimeout(15000, () => {
+      proxyReq.destroy(new Error('Proxy request timeout'));
+    });
+
+    if (req.method === 'POST' && req.body) {
+      const body = new URLSearchParams(req.body).toString();
+      proxyReq.write(body);
     }
 
-    if ([301, 302, 303, 307, 308].includes(proxyRes.statusCode)) {
-      const location = proxyRes.headers['location'] || '/';
-      return res.redirect(proxyRes.statusCode, location);
+    proxyReq.end();
+  } catch (err) {
+    console.error('[ProxyRequest Exception]', err.message);
+    if (!res.headersSent) {
+      res.status(500).send(`Internal proxy error: ${err.message}`);
     }
-
-    res.writeHead(proxyRes.statusCode, forwardHeaders);
-    proxyRes.pipe(res);
-  });
-
-  proxyReq.on('error', (err) => {
-    console.error('[ProxyError]', err.message);
-    res.status(502).send(`Proxy error: ${err.message}`);
-  });
-
-  proxyReq.setTimeout(15000, () => {
-    proxyReq.destroy(new Error('Proxy request timeout'));
-  });
-
-  if (req.method === 'POST' && req.body) {
-    const body = new URLSearchParams(req.body).toString();
-    proxyReq.write(body);
   }
-
-  proxyReq.end();
 }
 
 // ─────────────────────────────────────────────
@@ -124,7 +143,6 @@ app.all('/proxy/growid/frame', (req, res) => {
   proxyRequest(targetUrl, req, res);
 });
 
-// General proxy — Express 5 wildcard syntax
 app.all('/proxy/gt/:path(*)', (req, res) => {
   const subPath = req.params.path;
   const query = Object.keys(req.query).length
@@ -135,7 +153,6 @@ app.all('/proxy/gt/:path(*)', (req, res) => {
   proxyRequest(targetUrl, req, res);
 });
 
-// Test endpoint
 app.get('/proxy/test', async (_req, res) => {
   try {
     const agent = getAgent();
@@ -143,7 +160,10 @@ app.get('/proxy/test', async (_req, res) => {
       const r = https.get('https://api.ipify.org?format=json', { agent }, (resp) => {
         let body = '';
         resp.on('data', (c) => (body += c));
-        resp.on('end', () => resolve(JSON.parse(body).ip));
+        resp.on('end', () => {
+          try { resolve(JSON.parse(body).ip); }
+          catch (e) { reject(e); }
+        });
       });
       r.on('error', reject);
       r.setTimeout(10000, () => r.destroy(new Error('timeout')));
@@ -161,22 +181,21 @@ app.use((_req, res) => {
   res.status(404).send('<h1 style="color:red; text-align:center;"><i>Page Not Found <br> (404)</i></h1>');
 });
 
+// eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
   console.error('An error occurred:', err.message);
   res.status(500).send('Something went wrong.');
 });
 
 // ─────────────────────────────────────────────
-// Export untuk Vercel (serverless) + fallback listen lokal
+// Export untuk Vercel + listen lokal
 // ─────────────────────────────────────────────
 export default app;
 
-// Jalankan server saat development lokal (bukan di Vercel)
 if (process.env.VERCEL !== '1') {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
-    const safeProxy = SOCKS5_PROXY.replace(/:[^:@]+@/, ':***@');
-    console.log(`SOCKS5 Proxy aktif: ${safeProxy}`);
+    console.log(`SOCKS5 Proxy: ${SOCKS5_PROXY.replace(/:[^:@]+@/, ':***@')}`);
   });
 }

@@ -1,22 +1,21 @@
 import express from 'express';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import https from 'https';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
-const __dirname = path.resolve();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-
 // ─────────────────────────────────────────────
 // SOCKS5 Configuration
 // ─────────────────────────────────────────────
 const SOCKS5_PROXY = process.env.SOCKS5_PROXY || 'socks5://1:1@38.255.51.201:1080';
-
 const GROWTOPIA_BASE = 'https://login.growtopiagame.com';
 
 function getAgent() {
@@ -25,7 +24,6 @@ function getAgent() {
 
 // ─────────────────────────────────────────────
 // Reverse Proxy Helper
-// Fetch dari Growtopia via SOCKS5 lalu pipe ke client
 // ─────────────────────────────────────────────
 function proxyRequest(targetUrl, req, res) {
   const agent = getAgent();
@@ -43,7 +41,6 @@ function proxyRequest(targetUrl, req, res) {
   };
 
   const proxyReq = https.request(targetUrl, options, (proxyRes) => {
-    // Teruskan status & headers penting
     const forwardHeaders = {};
     const allowedHeaders = [
       'content-type', 'cache-control', 'set-cookie',
@@ -53,7 +50,6 @@ function proxyRequest(targetUrl, req, res) {
       if (proxyRes.headers[h]) forwardHeaders[h] = proxyRes.headers[h];
     }
 
-    // Kalau ada redirect dari Growtopia, teruskan ke client
     if ([301, 302, 303, 307, 308].includes(proxyRes.statusCode)) {
       const location = proxyRes.headers['location'] || '/';
       return res.redirect(proxyRes.statusCode, location);
@@ -72,7 +68,6 @@ function proxyRequest(targetUrl, req, res) {
     proxyReq.destroy(new Error('Proxy request timeout'));
   });
 
-  // Forward body kalau POST
   if (req.method === 'POST' && req.body) {
     const body = new URLSearchParams(req.body).toString();
     proxyReq.write(body);
@@ -82,7 +77,7 @@ function proxyRequest(targetUrl, req, res) {
 }
 
 // ─────────────────────────────────────────────
-// Routes: Existing
+// Routes
 // ─────────────────────────────────────────────
 
 app.post('/player/growid/checktoken', (_req, res) => {
@@ -105,45 +100,33 @@ app.all('/player/login/dashboard', (_req, res) => {
 });
 
 // ─────────────────────────────────────────────
-// Routes: GrowID Login via SOCKS5
-// Dipanggil dari login.html saat klik "Growtopia Login"
-// GET /proxy/growid/login?token=...
+// Proxy Routes (via SOCKS5)
 // ─────────────────────────────────────────────
+
 app.all('/proxy/growid/login', (req, res) => {
   const token = req.query.token || req.body?.token || '';
-  const targetUrl = `${GROWTOPIA_BASE}/player/growid/login?token=${encodeURIComponent(token)}`;
+  const targetUrl = `${GROWTOPIA_BASE}/player/growid/login?token=${token}`;
   console.log(`[SOCKS5] GrowID login → ${targetUrl}`);
   proxyRequest(targetUrl, req, res);
 });
 
-// ─────────────────────────────────────────────
-// Routes: Google Login via SOCKS5
-// GET /proxy/google/redirect?token=...
-// ─────────────────────────────────────────────
 app.all('/proxy/google/redirect', (req, res) => {
   const token = req.query.token || req.body?.token || '';
-  const targetUrl = `${GROWTOPIA_BASE}/google/redirect?token=${encodeURIComponent(token)}`;
+  const targetUrl = `${GROWTOPIA_BASE}/google/redirect?token=${token}`;
   console.log(`[SOCKS5] Google login → ${targetUrl}`);
   proxyRequest(targetUrl, req, res);
 });
 
-// ─────────────────────────────────────────────
-// Routes: Redirect.html — iframe via SOCKS5
-// GET /proxy/growid/frame?token=...
-// ─────────────────────────────────────────────
 app.all('/proxy/growid/frame', (req, res) => {
   const token = req.query.token || '';
-  const targetUrl = `${GROWTOPIA_BASE}/player/growid/login?token=${encodeURIComponent(token)}`;
+  const targetUrl = `${GROWTOPIA_BASE}/player/growid/login?token=${token}`;
   console.log(`[SOCKS5] GrowID frame → ${targetUrl}`);
   proxyRequest(targetUrl, req, res);
 });
 
-// ─────────────────────────────────────────────
-// Routes: Proxy umum untuk path Growtopia lainnya
-// GET /proxy/gt/*  → https://login.growtopiagame.com/*
-// ─────────────────────────────────────────────
-app.all('/proxy/gt/*', (req, res) => {
-  const subPath = req.params[0];
+// General proxy — Express 5 wildcard syntax
+app.all('/proxy/gt/:path(*)', (req, res) => {
+  const subPath = req.params.path;
   const query = Object.keys(req.query).length
     ? '?' + new URLSearchParams(req.query).toString()
     : '';
@@ -152,9 +135,7 @@ app.all('/proxy/gt/*', (req, res) => {
   proxyRequest(targetUrl, req, res);
 });
 
-// ─────────────────────────────────────────────
-// Routes: Test & Status
-// ─────────────────────────────────────────────
+// Test endpoint
 app.get('/proxy/test', async (_req, res) => {
   try {
     const agent = getAgent();
@@ -173,13 +154,6 @@ app.get('/proxy/test', async (_req, res) => {
   }
 });
 
-app.get('/proxy/status', (_req, res) => {
-  res.json({
-    proxy_enabled: !!SOCKS5_PROXY,
-    proxy: SOCKS5_PROXY ? SOCKS5_PROXY.replace(/:[^:@]+@/, ':***@') : null,
-  });
-});
-
 // ─────────────────────────────────────────────
 // 404 & Error Handler
 // ─────────────────────────────────────────────
@@ -193,12 +167,16 @@ app.use((err, _req, res, _next) => {
 });
 
 // ─────────────────────────────────────────────
-// Start Server
+// Export untuk Vercel (serverless) + fallback listen lokal
 // ─────────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
+export default app;
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  const safeProxy = SOCKS5_PROXY.replace(/:[^:@]+@/, ':***@');
-  console.log(`SOCKS5 Proxy aktif: ${safeProxy}`);
-});
+// Jalankan server saat development lokal (bukan di Vercel)
+if (process.env.VERCEL !== '1') {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    const safeProxy = SOCKS5_PROXY.replace(/:[^:@]+@/, ':***@');
+    console.log(`SOCKS5 Proxy aktif: ${safeProxy}`);
+  });
+}

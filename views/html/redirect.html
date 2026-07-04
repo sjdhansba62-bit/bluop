@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Growtopia Login</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <iframe id="loginFrame"></iframe>
+
+    <script>
+        let token = "GRrEvQ8ZVZQHDkph%2F6phXy6LCVMUErSbD%2Fgk9vqY9w1L6CS7g94DhkOVvNpE1M7WZtQ%2BM%2B%2BOdtKsVT6JLtywE9gKlqruBffDStJ9%2BlkGMtk1%2FXV9nNHkiK903nbpWcABmfg0p9rbDrJK1R%2Fx84krxiiEHxHHsSUdJtxlWwBE4JK0e3rJ7XZglOR%2B2Xgj4RahxP91SIWumSD4VQkyApZGGp3%2Ba68FACIw1vkA1mZRdRkbKkfsLhAdjEob7DkYfSRxFaFwfm2MpD76IN5Ttl09s%2FlWQPUQUR5dVPUvSuQPjtbPODLRWb6lH3l9bdBvwzFMy%2FgT788zSeXbszGegoVI1ZIH3uK0GfVHGMxMmGTVXtLezliMl7AYzsMZvdG1kEc9f0D47lBoKbkYanTB7eFsZh8Afmi%2FhrTPfXTl8gnrgt6G%2BlipLu9OVUwt6I95urgG3JOeXwHLSOnm8cA27LrapXAW9zrVM4PKKEoie4I1lpm%2FDH0ZAVilhhK46xeQRr%2Bhe0vNCv7ij6bZLrzuCb9ck%2Frn2cnFtJPKrcta%2BNQ6ZrfmWxFEZTIfXz5aXxe%2FQRaLBYMxhGlGKcLwSHk5r5f1dg%3D%3D"; 
+        let loginUrl = "https://login.growtopiagame.com/player/growid/login?token=" + token;
+
+        // langsung set iframe src
+        document.getElementById("loginFrame").src = loginUrl;
+    </script>
+</body>
+</html>
